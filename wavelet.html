@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wavelet Transform Tool</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: "Times New Roman", Times, serif;
+      background-color: #121212;   /* dark background */
+      color: #f0f0f0;              /* light text */
+      margin: 20px;
+    }
+    h1, h2 {
+      text-align: center;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .panel {
+      flex: 1;
+      min-width: 350px;
+      background: #1e1e1e;   /* dark panels */
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(255,255,255,0.1);
+    }
+    .info-box {
+      background: #1e1e1e;
+      border-left: 5px solid #00bfff;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      color: #e0e0e0;
+    }
+    .mono { font-family: monospace; color: #ffd700; }
+    input, button {
+      padding: 5px;
+      margin: 5px 0;
+      border-radius: 5px;
+      border: none;
+    }
+    button {
+      background: #00bfff;
+      color: #121212;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #0099cc;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Wavelet Transform Interactive Tool</h1>
+
+  <!-- Intro explanation box -->
+  <div class="info-box">
+    <p>
+      <b>Wavelet Transforms:</b> The discrete wavelet transform (DWT) is a linear signal processing 
+      technique that, when applied to a data vector X, transforms it to a numerically different vector, 
+      X, of wavelet coefficients. The two vectors are of the same length. When applying this technique 
+      to data reduction, we consider each tuple as an n-dimensional data vector, that is, 
+      X = (x1, x2, …, xn), depicting n measurements made on the tuple from n database attributes.
+    </p>
+    <p>
+      <i>How can this technique be useful for data reduction if the wavelet transformed data are of the 
+      same length as the original data?</i> The usefulness lies in the fact that the wavelet transformed 
+      data can be truncated. A compressed approximation of the data can be retained by storing only a 
+      small fraction of the strongest of the wavelet coefficients. For example, all wavelet coefficients 
+      larger than some user-specified threshold can be retained, while all other coefficients are set to 0. 
+    </p>
+    <p>
+      The resulting data representation is therefore very sparse, so that operations that can take advantage 
+      of data sparsity are computationally very fast if performed in wavelet space. The technique also works 
+      to remove noise without smoothing out the main features of the data, making it effective for data 
+      cleaning as well.
+    </p>
+  </div>
+
+  <!-- Controls -->
+  <div class="container">
+    <div class="panel">
+      <h2>Input Data</h2>
+      <p>Enter numbers separated by commas:</p>
+      <input type="text" id="dataInput" value="5,6,7,8" style="width:100%">
+      <p>Threshold: <input type="number" id="threshold" value="0.5" step="0.1"></p>
+      <button onclick="runDWT()">Run DWT</button>
+      <button onclick="addNoise()">Add Noise</button>
+    </div>
+
+    <div class="panel">
+      <h2>Coefficient Explorer</h2>
+      <div id="coeffs"></div>
+    </div>
+  </div>
+
+  <!-- Plot -->
+  <div class="panel">
+    <h2>Signal Visualization</h2>
+    <div id="plot"></div>
+  </div>
+
+  <!-- Explanation -->
+  <div class="panel">
+    <h2>Understanding the Results</h2>
+    <div id="explain"></div>
+  </div>
+
+  <script>
+    // Simple Haar DWT
+    function haarDWT(arr) {
+      let n = arr.length;
+      let output = arr.slice();
+      let temp = new Array(n);
+      while (n > 1) {
+        n /= 2;
+        for (let i=0; i<n; i++) {
+          let a = (output[2*i] + output[2*i+1]) / Math.sqrt(2);
+          let d = (output[2*i] - output[2*i+1]) / Math.sqrt(2);
+          temp[i] = a;
+          temp[n+i] = d;
+        }
+        for (let i=0; i<2*n; i++) output[i] = temp[i];
+      }
+      return output;
+    }
+
+    // Inverse Haar
+    function inverseHaar(coeffs) {
+      let n = 1;
+      let output = coeffs.slice();
+      while (n*2 <= coeffs.length) {
+        let temp = new Array(n*2);
+        for (let i=0; i<n; i++) {
+          let a = output[i];
+          let d = output[n+i];
+          temp[2*i] = (a + d)/Math.sqrt(2);
+          temp[2*i+1] = (a - d)/Math.sqrt(2);
+        }
+        for (let i=0; i<2*n; i++) output[i] = temp[i];
+        n *= 2;
+      }
+      return output;
+    }
+
+    function runDWT() {
+      let raw = document.getElementById("dataInput").value.split(",").map(Number);
+      let n = raw.length;
+      let power = Math.pow(2, Math.ceil(Math.log2(n)));
+      let padded = raw.slice();
+      while (padded.length < power) padded.push(0);
+
+      let coeffs = haarDWT(padded);
+      let T = parseFloat(document.getElementById("threshold").value);
+      let thresholded = coeffs.map(c => Math.abs(c) >= T ? c : 0);
+      let recon = inverseHaar(thresholded);
+
+      let mse = 0;
+      for (let i=0; i<raw.length; i++) {
+        mse += Math.pow(raw[i] - recon[i], 2);
+      }
+      mse /= raw.length;
+
+      document.getElementById("coeffs").innerHTML = "<p><b>Coefficients:</b><br>" + coeffs.map(c=>c.toFixed(3)).join(", ") + "</p>";
+
+      let trace1 = {y: raw, mode: "lines+markers", name:"Original"};
+      let trace2 = {y: recon.slice(0, raw.length), mode:"lines+markers", name:"Reconstructed"};
+      Plotly.newPlot("plot", [trace1, trace2], {title:"Original vs Reconstructed"});
+
+      updateExplanation(raw, power, coeffs, thresholded, recon, mse, T);
+    }
+
+    function updateExplanation(raw, padded, packed, thresholded, recon, mseVal, T) {
+      const kept = thresholded.filter(v => v !== 0).length;
+      const pct = ((kept/thresholded.length)*100).toFixed(1);
+
+      // Step explanation
+      let steps = "";
+      if (raw.length >= 2) {
+        steps += "<p><b>How coefficients are formed (Haar example):</b></p><ul>";
+        for (let i = 0; i < raw.length; i += 2) {
+          const a = ((raw[i] + raw[i+1]) / Math.sqrt(2)).toFixed(4);
+          const d = ((raw[i] - raw[i+1]) / Math.sqrt(2)).toFixed(4);
+          steps += `<li>Pair [${raw[i]}, ${raw[i+1]}] → 
+            Approx = (${raw[i]}+${raw[i+1]})/√2 = <span class="mono">${a}</span>, 
+            Detail = (${raw[i]}−${raw[i+1]})/√2 = <span class="mono">${d}</span></li>`;
+        }
+        steps += "</ul>";
+      }
+
+      let html = `
+        <p><b>1. Input vector:</b> <span class="mono">[${raw.join(", ")}]</span>, padded to <b>${padded}</b>.</p>
+        <p><b>2. Wavelet transform:</b> Haar wavelet splits the signal into averages (trend) and differences (details).</p>
+        ${steps}
+        <p><b>3. Thresholding:</b> With threshold <span class="mono">${T}</span>, kept <b>${kept}</b> coefficients (${pct}%).</p>
+        <p><b>4. Reconstruction:</b> The signal is rebuilt from strong coefficients (green vs purple in plot).</p>
+        <p><b>5. Error measure:</b> MSE = <span class="mono">${mseVal.toFixed(6)}</span>.</p>
+      `;
+      document.getElementById("explain").innerHTML = html;
+    }
+
+    function addNoise() {
+      let raw = document.getElementById("dataInput").value.split(",").map(Number);
+      let noisy = raw.map(v => v + (Math.random()-0.5));
+      document.getElementById("dataInput").value = noisy.map(v=>v.toFixed(2)).join(",");
+    }
+  </script>
+</body>
+</html>
